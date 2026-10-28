@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -u -o pipefail
 
 banner() {
 cat << "EOF"
