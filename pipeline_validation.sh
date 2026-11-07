@@ -9,6 +9,8 @@ fi
 
 SCRIPT_DIR=$(dirname $(pwd))
 
+TEST_AMOUNT=()
+
 banner() {
 cat << "EOF"
    ____  ___   ____  ____       ____  _   _  _____   ____  _  __
@@ -29,8 +31,10 @@ check_if_tools_exist() {
         which ${TOOLS[$i]} > /dev/null 2>&1
         if [[ $? -eq "0" ]]; then   
             echo "${GREEN}${TOOLS[$i]} does exist ${ENDING}"
+            TEST_AMOUNT+=("0")
         else
-            echo "${GREEN} ${TOOLS[$i]} does exist in the system ${ENDING}"
+            echo "${RED} ${TOOLS[$i]} does exist in the system ${ENDING}"
+            TEST_AMOUNT+=("1")
         fi
     done
 }
@@ -39,9 +43,11 @@ check_working_tree() {
     cd $REPO_PATH
 
     if [[-z "$(git status --porcelain)" ]]; then 
-        echo "Working dir clean"
+        echo "${GREEN}Working directory clean ${ENDING}"
+        TEST_AMOUNT+=("0")
     else 
-        echo "Working dir not clean"
+        echo "${RED}Working directory not clean ${ENDING}"
+        TEST_AMOUNT+=("1")
     fi
 }
 
@@ -49,9 +55,11 @@ check_current_branch() {
     cd $REPO_PATH
 
     if [[ "$(git status --porcelain)" == "master" || "release" || "main" ]]; then 
-        echo "You are in the main branch"
+        echo "${GREEN}You are in the main branch ${ENDING}"
+        TEST_AMOUNT+=("0")
     else 
-        echo "You are not in the main branch"
+        echo "${RED}You are not in the main branch ${ENDING}"
+        TEST_AMOUNT+=("1")
     fi
 }
 
@@ -62,9 +70,11 @@ check_npm_ci() {
         OUTCOME=$(npm ci | tail -1 | cut -d " " -f 2 )
 
         if [[ "$OUTCOME" -eq "0" ]]; then
-            echo "Zero vulnerabilities found"
+            echo "${GREEN}Zero vulnerabilities found ${ENDING}"
+            TEST_AMOUNT+=("0")
         else    
-            echo "{$OUTCOME} vulnerabilities found"
+            echo "${RED} ${OUTCOME} vulnerabilities found ${ENDING}"
+            TEST_AMOUNT+=("1")
         fi
 
     fi
@@ -73,16 +83,18 @@ check_npm_ci() {
 check_npm_audit() {
         if [[ -e "$REPO_PATH/package-lock.json" || -e "$REPO_PATH/npm-shrinkwrap.json" ]]; then
 
-        cd "$REPO_PATH"
-        OUTCOME=$(npm audit | tail -1 | cut -d " " -f 2 )
+            cd "$REPO_PATH"
+            OUTCOME=$(npm audit | tail -1 | cut -d " " -f 2 )
 
-        if [[ "$OUTCOME" -eq "0" ]]; then
-            echo "Zero vulnerabilities found"
-        else    
-            echo "${OUTCOME} vulnerabilities found"
+            if [[ "$OUTCOME" -eq "0" ]]; then
+                echo "${GREEN} Zero vulnerabilities found ${ENDING}"
+                TEST_AMOUNT+=("0")
+            else    
+                echo "${RED} ${OUTCOME} vulnerabilities found ${ENDING}"
+                TEST_AMOUNT+=("1")
+            fi
+
         fi
-
-    fi
 }
 
 check_versions() {
@@ -90,10 +102,12 @@ check_versions() {
     NVMRC_NODE=$(cat .nvmrc | sed 's/v//')
     PACKAGE_NODE=$(grep -i "node" package-lock.json | cut -d: -f2 | sed 's/[,!"]/ /g' | sed 's/ //g')
 
-    if [[ "$ACTIVE_NODE" == "$NVMRC_NODE" && "$ACTIVE_NODE" == "$PACKAGE_NODE" ]]; then
-
+    if [[ "$ACTIVE_NODE" = "$NVMRC_NODE" && "$ACTIVE_NODE" = "$PACKAGE_NODE" ]]; then
+        echo "${GREEN} All versions match ${ENDING}"
+        TEST_AMOUNT+=("0")
     else
-
+        echo "${RED} Versions do not match ${ENDING}"
+        TEST_AMOUNT+=("1")
     fi
 }
 
@@ -103,14 +117,28 @@ check_npm_test() {
     npm test
     return_code=$?
     if [ "$return_code" -ne 0 ]; then
-        echo "Tests failed. Fix issues before deployment."
-        exit 1
+        echo "${RED} Tests failed. Fix issues before deployment. ${ENDING}"
+        TEST_AMOUNT+=("0")
+    else 
+        echo "${GREEN} All tests passed ${ENDING}"
+        TEST_AMOUNT+=("1")
     fi
-    echo "All tests passed."
-
 }
 
+check_docker_build() {
+    cd $REPO_PATH
+    DOCKER_BUILD=$(docker build --check --quiet . 2>&1)
+    return_code=$?
+     if [ "$return_code" -ne 0 ]; then
+        echo "${RED} ${DOCKER_BUILD} ${ENDING}"
+        TEST_AMOUNT+=("0")
+    else 
+        echo "${GREEN} All tests passed ${ENDING}"
+        TEST_AMOUNT+=("1")
+    fi
+}
 
+check_docker_build
 
 #case $1 in 
 #    help|-h|--help) cat "$SCRIPT_DIR/README" ;;
@@ -118,5 +146,3 @@ check_npm_test() {
 #    check) check_if_tools_exist;;
 #    *) echo "Not know option: $1 (try: $0 for help)" >&2; exit 1 ;;
 #esac
-
-check_npm_ci
