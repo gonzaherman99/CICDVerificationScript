@@ -141,19 +141,13 @@ check_versions() {
 }
 
 check_npm_test() {
-    cd $REPO_PATH
-
-    check_for_errors npm test
-    #r#eturn_code=$?
-    #if [ "$return_code" -ne 0 ]; then
-    #    # echo "${RED} Tests failed. Fix issues before deployment. ${ENDING}"
-    #    TESTS["Does NPM test works?"]=1
-    #else 
-       # echo "${GREEN} All tests passed ${ENDING}"
-    #    TESTS["Does NPM test works?"]=0
-    #fi
-
-    return 0 
+    cd "$REPO_PATH" || return 1
+    if check_for_errors npm test
+    then
+        TESTS["Does npm test work?"]=0
+    else
+        TESTS["Does npm test work?"]=1
+    fi
 }
 
 check_docker_build() {
