@@ -7,24 +7,16 @@ else
     RED=''; GREEN=''; YELLOW=''; BLUE=''; ENDING=''
 fi
 
-REPO_PATH="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_PATH="${2:-$(pwd)}"
 
 declare -A TESTS
+declare -A OUTPUTS
+
+LAST_OUTPUT=""
 
 check_for_errors() {
-    
-     local output
-    output=$("$@" 2>&1) 
-    status=$?
-
-
-    if [[ "$status" -ne 0 ]]; then
-        echo "$output"
-    else 
-       printf '%s\n' "$output"
-    fi
-
-    return "$status"
+    LAST_OUTPUT=$("$@" 2>&1) 
 }
 
 
@@ -42,47 +34,58 @@ EOF
 
 
 check_if_tools_exist() {
-    TOOLS=("git" "node" "npm" "docker")
+    COUNTER=0
+    ERRORS=()
 
-    for i in ${!TOOLS[@]}; do
-        which ${TOOLS[$i]} > /dev/null 2>&1
-        if [[ $? -eq "0" ]]; then   
-           # echo "${GREEN}${TOOLS[$i]} does exist ${ENDING}"
-            TESTS["Tools exist?"]=0
+    for i in "git" "node" "npm" "docker"; do
+        which $i > /dev/null 2>&1
+        return_code="$?"
+        if [[ "$return_code" -eq "0" ]]; then   
+            COUNTER=$((COUNTER+1))
         else
-            #echo "${RED} ${TOOLS[$i]} does exist in the system ${ENDING}"
-            TESTS["Tools exist?"]=1
+            COUNTER=$((COUNTER+0))
+            ERRORS+=("$i")
         fi
     done
+
+    if [[ "$COUNTER" == 4 ]]; then
+        TESTS["Tools exist?"]=0
+        OUTPUTS["Tools exist?"]="No errors to show"
+
+    else
+        TESTS["Tools exist?"]=1
+        OUTPUTS["Tools exist?"]="Missing tools: ${ERRORS[*]}"
+    fi
 
     return 0 
 }
 
 check_working_tree() {
-    cd $REPO_PATH
+    cd "$REPO_PATH" || return 1
 
-    GIT_STATUS=$(check_for_errors git status --porcelain)
+    check_for_errors git status --porcelain
 
-    if [[ -z "$GIT_STATUS" ]]; then 
-        #3echo "${GREEN}Working directory clean ${ENDING}"
+    if [[ -z "$LAST_OUTPUT" ]]; then 
         TESTS["Working directory clean?"]=0
+        OUTPUTS["Working directory clean?"]="No errors to show"
     else 
-        #echo "${RED}Working directory not clean ${ENDING}"
         TESTS["Working directory clean?"]=1
+        OUTPUTS["Working directory clean?"]=$LAST_OUTPUT
     fi
 
     return 0 
 }
 
 check_current_branch() {
-    cd $REPO_PATH
+    cd "$REPO_PATH" || return 1
+    BRANCH=$(git branch --show-current 2>/dev/null)
 
-    if [[ "$(check_for_errors git branch)" == "master" || "release" || "main" ]]; then 
-        #echo "${GREEN}You are in the main branch ${ENDING}"
+    if [[ "$BRANCH" == "master" || "$BRANCH" == "release" || "$BRANCH" == "main" ]]; then 
         TESTS["Are you in the main branch?"]=0
+        OUTPUTS["Are you in the main branch?"]="No errors to show"
     else 
-        #echo "${RED}You are not in the main branch ${ENDING}"
         TESTS["Are you in the main branch?"]=1
+        OUTPUTS["Are you in the main branch?"]="Current branch is ${BRANCH:-unknown}"
     fi
 
     return 0 
@@ -91,15 +94,16 @@ check_current_branch() {
 check_npm_ci() {
     if [[ -e "$REPO_PATH/package-lock.json" || -e "$REPO_PATH/npm-shrinkwrap.json" ]]; then
 
-        cd "$REPO_PATH"
-        OUTCOME=$(check_for_errors npm ci | tail -1 | cut -d " " -f 2 )
+        cd "$REPO_PATH" || return 1
 
-        if [[ "$OUTCOME" -eq "0" ]]; then
-            #echo "${GREEN}Zero vulnerabilities found ${ENDING}"
+        check_for_errors npm ci
+
+        if grep -q "found 0 vulnerabilities" <<< "$LAST_OUTPUT"; then
             TESTS["Zero vulnerabilites found (CI)?"]=0
+            OUTPUTS["Zero vulnerabilites found (CI)?"]="No errors to show"
         else    
-            #echo "${RED} ${OUTCOME} vulnerabilities found ${ENDING}"
-            TESTS["Zero vulnerabilites found?"]=1
+            TESTS["Zero vulnerabilites found (CI)?"]=1
+            OUTPUTS["Zero vulnerabilites found (CI)?"]=$LAST_OUTPUT
         fi
 
     fi
@@ -110,31 +114,33 @@ check_npm_ci() {
 check_npm_audit() {
         if [[ -e "$REPO_PATH/package-lock.json" || -e "$REPO_PATH/npm-shrinkwrap.json" ]]; then
 
-            cd "$REPO_PATH"
-            OUTCOME=$(check_for_errors npm audit | tail -1 | cut -d " " -f 2 )
+            cd "$REPO_PATH" || return 1
 
-            if [[ "$OUTCOME" -eq "0" ]]; then
-              #  echo "${GREEN} Zero vulnerabilities found ${ENDING}"
+            check_for_errors npm audit
+
+            if grep -q "found 0 vulnerabilities" <<< "$LAST_OUTPUT"; then
                 TESTS["Zero vulnerabilites found (Audit)?"]=0
+                 OUTPUTS["Zero vulnerabilites found (Audit)?"]="No errors to show"
             else    
-               # echo "${RED} ${OUTCOME} vulnerabilities found ${ENDING}"
                 TESTS["Zero vulnerabilites found (Audit)?"]=1
+                OUTPUTS["Zero vulnerabilites found (Audit)?"]=$LAST_OUTPUT
             fi
 
         fi
 }
 
 check_versions() {
-    ACTIVE_NODE=$(node -v | sed 's/v//')
-    NVMRC_NODE=$(cat .nvmrc | sed 's/v//')
-    PACKAGE_NODE=$(grep -i "node" package-lock.json | cut -d: -f2 | sed 's/[,!"]/ /g' | sed 's/ //g')
+    cd "$REPO_PATH" || return 1
+    ACTIVE_NODE=$( node -v | sed 's/v//' 2>/dev/null)
+    NVMRC_NODE=$( cat .nvmrc | sed 's/v//' 2>/dev/null)
+    PACKAGE_NODE=$(node -p "require('./package.json').engines?.node || ''" 2>/dev/null | sed 's/[^0-9.]//g')
 
     if [[ "$ACTIVE_NODE" = "$NVMRC_NODE" && "$ACTIVE_NODE" = "$PACKAGE_NODE" ]]; then
-       # echo "${GREEN} All versions match ${ENDING}"
         TESTS["All versions match?"]=0
+        OUTPUTS["All versions match?"]="No errors to show"
     else
-       # echo "${RED} Versions do not match ${ENDING}"
         TESTS["All versions match?"]=1
+       OUTPUTS["All versions match?"]="node: $ACTIVE_NODE, .nvmrc: ${NVMRC_NODE:-not found}, package: ${PACKAGE_NODE:-not found}"
     fi
 
     return 0 
@@ -145,21 +151,23 @@ check_npm_test() {
     if check_for_errors npm test
     then
         TESTS["Does npm test work?"]=0
+        OUTPUTS["Does npm test work?"]="No errors to show"
     else
         TESTS["Does npm test work?"]=1
+        OUTPUTS["Does npm test work?"]=$LAST_OUTPUT
     fi
 }
 
 check_docker_build() {
-    cd $REPO_PATH
-    DOCKER_BUILD=$(docker build --check --quiet . 2>&1)
+    cd "$REPO_PATH" || return 1
+    check_for_errors docker build --check --quiet . 2>&1
     return_code=$?
      if [ "$return_code" -ne 0 ]; then
-       # echo "${RED} ${DOCKER_BUILD} ${ENDING}"
-        TESTS["Does Docker build works?"]=0
-    else 
-       # echo "${GREEN} All tests passed ${ENDING}"
         TESTS["Does Docker build works?"]=1
+        OUTPUTS["Does Docker build works?"]=$LAST_OUTPUT
+    else 
+        TESTS["Does Docker build works?"]=0
+        OUTPUTS["Does Docker build works?"]="No errors to show"
     fi
 
     return 0 
@@ -173,6 +181,8 @@ all_functions() {
     check_npm_audit
     check_npm_ci
     check_npm_test
+    check_versions
+    check_docker_build
     
 
     postivecounter=0
@@ -180,9 +190,11 @@ all_functions() {
     for key in "${!TESTS[@]}"; do
         if [[ "${TESTS[$key]}" == "0" ]]; then
             echo "${GREEN}${key//,/} test passed ${ENDING}"
+            echo "${GREEN}${OUTPUTS[$key]}${ENDING}"
             postivecounter=$((postivecounter+1))
         else 
             echo "${RED}${key//,/} test failed ${ENDING}"
+            echo "${RED}${OUTPUTS[$key]}${ENDING}"
             nagativecounter=$((nagativecounter+1))
         fi
     done
