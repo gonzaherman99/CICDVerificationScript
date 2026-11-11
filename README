@@ -1,1 +1,26 @@
-Work in progress...
+# CICD Check
+
+Runs pre-release sanity checks on a Node.js project and prints a pass/fail report
+This tool was developed in Ubuntu.
+
+Requirements
+
+Bash 4+, git, node, npm, docker.
+
+Usage
+
+    ./cicd-check.sh all [repo-path]    # run all checks (default: current dir)
+    ./cicd-check.sh help               # show this README
+    ./cicd-check.sh version            # show version
+
+Checks
+
+- Required tools are installed
+- Working directory is clean
+- On `main`, `master` or `release`
+- `npm audit` and `npm ci` report 0 vulnerabilities
+- `npm test` passes
+- Node version matches `.nvmrc` and `package.json` engines
+- Dockerfile passes `docker build --check`
+
+Note: `npm ci` reinstalls `node_modules`, and the script always exits 0.
