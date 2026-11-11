@@ -1,26 +1,52 @@
-# CICD Check
+CICD Check
 
-Runs pre-release sanity checks on a Node.js project and prints a pass/fail report
-This tool was developed in Ubuntu.
+A Bash script that runs pre-release sanity checks on a Node.js project
+(git state, dependencies, tests, Node versions and Dockerfile) and prints
+a pass/fail report.
 
 Requirements
 
-Bash 4+, git, node, npm, docker.
+-Bash 4+ (macOS ships 3.2: 'brew install bash')
+-git, node, npm, and docker with the daemon running
 
 Usage
 
-    ./cicd-check.sh all [repo-path]    # run all checks (default: current dir)
-    ./cicd-check.sh help               # show this README
-    ./cicd-check.sh version            # show version
+    ./cicd-check.sh <command> [repo-path]
+
+| Command                | Description                                  |
+|------------------------|----------------------------------------------|
+| all                    | Run all checks (repo-path defaults to '.')   |
+| help, -h, --help       | Show this README                             |
+| version, -v, --version | Show the version                             |
+
+Examples:
+
+    ./cicd-check.sh all
+    ./cicd-check.sh all ~/projects/my-app
 
 Checks
 
-- Required tools are installed
-- Working directory is clean
-- On `main`, `master` or `release`
-- `npm audit` and `npm ci` report 0 vulnerabilities
-- `npm test` passes
-- Node version matches `.nvmrc` and `package.json` engines
-- Dockerfile passes `docker build --check`
+| Check                     | Passes when                                                 |
+|---------------------------|-------------------------------------------------------------|
+| Tools exist               | git, node, npm and docker are installed                     |
+| Working directory clean   | 'git status' shows no changes                               |
+| Main branch               | Current branch is 'main', 'master' or 'release'             |
+| npm audit                 | 0 vulnerabilities found*                                    |
+| npm ci                    | Install succeeds with 0 vulnerabilities*                    |
+| npm test                  | Tests exit with status 0                                    |
+| Versions match            | 'node -v', '.nvmrc' and 'package.json' engines are identical |
+| Docker                    | Dockerfile passes 'docker build --check'                    |
 
-Note: `npm ci` reinstalls `node_modules`, and the script always exits 0.
+Only runs if the project has a `package-lock.json` or `npm-shrinkwrap.json`.
+
+Notes
+
+-npm ci deletes and reinstalls node_modules.
+-Versions must match exactly, e.g. '.nvmrc' set to 'v22.23.4' and
+  engines set to >=22.23.4. Ranges or aliases like 'lts/*' won't match.
+-'docker build --check' only validates the Dockerfile; it doesn't build
+  an image.
+-The script always exits 0. To fail a CI step on any failed check:
+
+      ./cicd-check.sh all | tee report.txt
+      ! grep -q " test failed" report.txt

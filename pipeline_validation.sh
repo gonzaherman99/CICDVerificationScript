@@ -106,6 +106,9 @@ check_npm_ci() {
             OUTPUTS["Zero vulnerabilites found (CI)?"]=$LAST_OUTPUT
         fi
 
+    else 
+        TESTS["Zero vulnerabilites found (CI)?"]=1
+        OUTPUTS["Zero vulnerabilites found (CI)?"]="No package-lock.json and/or npm-shrinkwrap.json found"
     fi
 
     return 0 
@@ -126,6 +129,9 @@ check_npm_audit() {
                 OUTPUTS["Zero vulnerabilites found (Audit)?"]=$LAST_OUTPUT
             fi
 
+        else
+            TESTS["Zero vulnerabilites found (CI)?"]=1
+            OUTPUTS["Zero vulnerabilites found (CI)?"]="No package-lock.json and/or npm-shrinkwrap.json found"
         fi
 }
 
