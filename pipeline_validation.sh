@@ -8,7 +8,7 @@ else
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_PATH="${2:-$(pwd)}"
+REPO_PATH="$(cd "${2:-.}" && pwd)" || exit 1
 
 declare -A TESTS
 declare -A OUTPUTS
@@ -96,9 +96,8 @@ check_npm_ci() {
 
         cd "$REPO_PATH" || return 1
 
-        check_for_errors npm ci
 
-        if grep -q "found 0 vulnerabilities" <<< "$LAST_OUTPUT"; then
+        if check_for_errors npm ci; then
             TESTS["Zero vulnerabilites found (CI)?"]=0
             OUTPUTS["Zero vulnerabilites found (CI)?"]="No errors to show"
         else    
@@ -119,9 +118,7 @@ check_npm_audit() {
 
             cd "$REPO_PATH" || return 1
 
-            check_for_errors npm audit
-
-            if grep -q "found 0 vulnerabilities" <<< "$LAST_OUTPUT"; then
+            if  check_for_errors npm audit --audit-level=high; then
                 TESTS["Zero vulnerabilites found (Audit)?"]=0
                  OUTPUTS["Zero vulnerabilites found (Audit)?"]="No errors to show"
             else    
@@ -130,26 +127,65 @@ check_npm_audit() {
             fi
 
         else
-            TESTS["Zero vulnerabilites found (CI)?"]=1
-            OUTPUTS["Zero vulnerabilites found (CI)?"]="No package-lock.json and/or npm-shrinkwrap.json found"
+            TESTS["Zero vulnerabilites found (Audit)?"]=1
+            OUTPUTS["Zero vulnerabilites found (Audit)?"]="No package-lock.json and/or npm-shrinkwrap.json found"
         fi
 }
 
 check_versions() {
-    cd "$REPO_PATH" || return 1
-    ACTIVE_NODE=$( node -v | sed 's/v//' 2>/dev/null)
-    NVMRC_NODE=$( cat .nvmrc | sed 's/v//' 2>/dev/null)
-    PACKAGE_NODE=$(node -p "require('./package.json').engines?.node || ''" 2>/dev/null | sed 's/[^0-9.]//g')
+    local key="All versions match?"
+    local active want="" range="" out problems=()
 
-    if [[ "$ACTIVE_NODE" = "$NVMRC_NODE" && "$ACTIVE_NODE" = "$PACKAGE_NODE" ]]; then
-        TESTS["All versions match?"]=0
-        OUTPUTS["All versions match?"]="No errors to show"
-    else
-        TESTS["All versions match?"]=1
-       OUTPUTS["All versions match?"]="node: $ACTIVE_NODE, .nvmrc: ${NVMRC_NODE:-not found}, package: ${PACKAGE_NODE:-not found}"
+    cd "$REPO_PATH" || return 1
+
+    active=$( node -p "process.versions.node" 2>/dev/null )
+
+    if [[ -z "$active" ]]; then
+        TESTS[$key]=1; OUTPUTS[$key]="node not found"; return 0
     fi
 
-    return 0 
+    if [[ -f .nvmrc ]]; then
+        want=$(sed -e 's/#.*//' -e 's/^[[:space:]]*v//' .nvmrc | tr -d '[:space:]')
+        want=${want,,}
+
+        case $want in
+            "")  problems+=(".nvmrc is empty") ;;
+            node|stable) ;; # does nothing
+            'lts/*')     [[ -n $(node -p 'process.release.lts || ""') ]] \
+                             || problems+=("node $active is not an LTS release (.nvmrc: lts/*)") ;;
+            lts/*)       [[ $(node -p 'String(process.release.lts || "").toLowerCase()') == "${want#lts/}" ]] \
+                             || problems+=("node $active is not the '${want#lts/}' LTS line (.nvmrc: $want)") ;;
+             *)           [[ $active == "$want" || $active == "$want".* ]] \
+                             || problems+=("node $active does not match .nvmrc ($want)") ;;
+        esac
+    else 
+        problems+=(".nvmrc not found")
+    fi
+
+    range=$(node -p "require('./package.json').engines?.node || ''" 2>/dev/null)
+    
+    if [[ -z "$range" ]]; then
+
+        problems+=("package.json has no engines.node")
+
+    elif ! out=$(npx --yes semver@7 --range "$range" "$active" 2>&1); then
+       
+        problems+=("${out:-node $active does not satisfy engines.node \"$range\"}")
+
+    fi
+
+    if (( ${#problems[@]} == 0 )); then
+
+        TESTS[$key]=0; OUTPUTS[$key]="node $active matches .nvmrc ($want) and engines.node ($range)"
+    
+    else
+        
+        TESTS[$key]=1; OUTPUTS[$key]=$(printf '%s\n' "${problems[@]}")
+
+    fi
+
+    return 0
+ 
 }
 
 check_npm_test() {
@@ -195,11 +231,11 @@ all_functions() {
     nagativecounter=0
     for key in "${!TESTS[@]}"; do
         if [[ "${TESTS[$key]}" == "0" ]]; then
-            echo "${GREEN}${key//,/} test passed ${ENDING}"
+            echo "${GREEN}${key} test passed ${ENDING}"
             echo "${GREEN}${OUTPUTS[$key]}${ENDING}"
             postivecounter=$((postivecounter+1))
         else 
-            echo "${RED}${key//,/} test failed ${ENDING}"
+            echo "${RED}${key} test failed ${ENDING}"
             echo "${RED}${OUTPUTS[$key]}${ENDING}"
             nagativecounter=$((nagativecounter+1))
         fi
@@ -212,6 +248,6 @@ all_functions() {
 case $1 in 
     help|-h|--help) cat "$SCRIPT_DIR/README" ;;
     version|-v|--version) echo "Version 1.0.0" ;;
-    all) all_functions;;
+    all) all_functions; exit $(( nagativecounter > 0 )) ;;
     *) echo "Not know option: $1 (try: $0 for help)" >&2; exit 1 ;;
 esac
