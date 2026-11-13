@@ -200,16 +200,16 @@ check_npm_test() {
     fi
 }
 
-check_docker_build() {
+check_docker_lint() {
     cd "$REPO_PATH" || return 1
     check_for_errors docker build --check --quiet . 2>&1
     return_code=$?
      if [ "$return_code" -ne 0 ]; then
-        TESTS["Does Docker build works?"]=1
-        OUTPUTS["Does Docker build works?"]=$LAST_OUTPUT
+        TESTS["Does Docker lint works?"]=1
+        OUTPUTS["Does Docker lint works?"]=$LAST_OUTPUT
     else 
-        TESTS["Does Docker build works?"]=0
-        OUTPUTS["Does Docker build works?"]="No errors to show"
+        TESTS["Does Docker lint works?"]=0
+        OUTPUTS["Does Docker lint works?"]="No errors to show"
     fi
 
     return 0 
