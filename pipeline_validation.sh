@@ -9,6 +9,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_PATH="$(cd "${2:-.}" && pwd)" || exit 1
+VERSION="$(cat ./VERSION)"
 
 declare -A TESTS
 declare -A OUTPUTS
@@ -247,7 +248,7 @@ all_functions() {
 
 case $1 in 
     help|-h|--help) cat "$SCRIPT_DIR/README" ;;
-    version|-v|--version) echo "Version 1.0.0" ;;
+    version|-v|--version) echo "${VERSION}" ;;
     all) all_functions; exit $(( nagativecounter > 0 )) ;;
     *) echo "Not know option: $1 (try: $0 for help)" >&2; exit 1 ;;
 esac
